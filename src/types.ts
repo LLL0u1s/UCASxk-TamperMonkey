@@ -98,3 +98,15 @@ export interface OcrResponse {
   confidence: number;
   accepted: boolean;
 }
+
+export interface UiPreferences {
+  schemaVersion: 1;
+  mode: RunMode;
+  codesText: string;
+  intervalMin: number;
+  intervalMax: number;
+  ocrUrl: string;
+  collapsed: boolean;
+  sidCache?: SidCache;
+  sidFileName?: string;
+}

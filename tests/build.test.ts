@@ -10,4 +10,10 @@ describe("userscript metadata", () => {
     expect(script).toContain("@connect      127.0.0.1");
     expect(script).not.toMatch(/JSESSIONID|browser_fingerprint|Identity=/);
   });
+
+  it("does not use a blocking confirmation dialog", () => {
+    const ui = readFileSync(new URL("../src/ui.ts", import.meta.url), "utf8");
+    expect(ui).not.toContain("window.confirm");
+    expect(ui).toContain("自动加入预选（选课首日推荐）");
+  });
 });

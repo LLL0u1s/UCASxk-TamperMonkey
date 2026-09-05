@@ -47,11 +47,25 @@ export function makeSidCache(codes: string[], lookups: Record<string, CourseLook
   };
 }
 
+export function sidFilename(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const timestamp = [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("");
+  return `ucasxk-sids-${timestamp}.json`;
+}
+
 export function downloadSidCache(cache: SidCache): void {
   const blob = new Blob([JSON.stringify(cache, null, 2) + "\n"], { type: "application/json" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `ucasxk-sids-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = sidFilename();
   link.click();
   URL.revokeObjectURL(link.href);
 }

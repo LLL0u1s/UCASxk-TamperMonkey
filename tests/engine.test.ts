@@ -22,6 +22,7 @@ beforeEach(() => {
     GM_setValue: (key: string, value: unknown) => values.set(key, structuredClone(value)),
     GM_deleteValue: (key: string) => values.delete(key),
   });
+  document.body.innerHTML = "";
 });
 
 function state(): RunState {
@@ -72,5 +73,35 @@ describe("persistent run state", () => {
     expect(state().active).toBe(false);
     expect(state().phase).toBe("stopped");
     expect(state().logs.at(-1)?.message).toMatch(/页面路径与任务阶段不一致/);
+  });
+
+  it("completes watch mode after exactly one query round", async () => {
+    startRun({
+      mode: "watch",
+      codes: ["A"],
+      intervalMin: 0.8,
+      intervalMax: 1.8,
+      ocrUrl: "http://127.0.0.1:8765",
+    });
+    const restored = state();
+    restored.phase = "query_result";
+    restored.expectedPath = "/";
+    restored.roundCodes = ["A"];
+    restored.currentCode = "A";
+    restored.queryIndex = 0;
+    values.set("ucasxk.run-state.v1", restored);
+    navigation.submitNavigation.mockReset();
+    document.body.innerHTML = `
+      <form id="regfrm"><table>
+        <tr><th>选课</th><th>课程编码</th><th>课程名称</th><th>限选</th><th>已选</th></tr>
+        <tr><td><input name="sids" value="sid-a" disabled></td><td>A</td><td>课程 A</td><td>10</td><td>10</td></tr>
+      </table></form>`;
+
+    await resumeRun();
+
+    expect(state().phase).toBe("completed");
+    expect(state().active).toBe(false);
+    expect(state().courseStatus.A).toContain("暂不可选");
+    expect(navigation.submitNavigation).not.toHaveBeenCalled();
   });
 });

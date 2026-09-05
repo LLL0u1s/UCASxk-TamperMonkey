@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UCASxk 选课助手
 // @namespace    https://github.com/local/UCASxk-TamperMonkey
-// @version      0.1.0
+// @version      0.2.0
 // @description  在 UCAS xkgo 页面监控课程并经本地 OCR 将课程加入预选
 // @match        https://xkgo.ucas.ac.cn:3000/*
 // @grant        GM_xmlhttpRequest
@@ -243,11 +243,24 @@
       })
     };
   }
+  function sidFilename(date = /* @__PURE__ */ new Date()) {
+    const pad = (value) => String(value).padStart(2, "0");
+    const timestamp = [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate()),
+      "-",
+      pad(date.getHours()),
+      pad(date.getMinutes()),
+      pad(date.getSeconds())
+    ].join("");
+    return `ucasxk-sids-${timestamp}.json`;
+  }
   function downloadSidCache(cache) {
     const blob = new Blob([JSON.stringify(cache, null, 2) + "\n"], { type: "application/json" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `ucasxk-sids-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.json`;
+    link.download = sidFilename();
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -528,11 +541,7 @@
       return;
     }
     if (state.mode === "watch") {
-      if (!state.pendingCodes.length) {
-        complete(state, "\u76EE\u6807\u8BFE\u7A0B\u5DF2\u51FA\u73B0\u4F59\u91CF\uFF1B\u89C2\u5BDF\u6A21\u5F0F\u672A\u63D0\u4EA4\u4EFB\u4F55\u8BFE\u7A0B");
-        return;
-      }
-      await waitAndContinue(state);
+      complete(state, `\u672C\u6B21\u4F59\u91CF\u89C2\u5BDF\u5DF2\u5B8C\u6210\uFF1B\u5171\u67E5\u8BE2 ${state.roundCodes.length} \u95E8\u8BFE\u7A0B\uFF0C\u672A\u63D0\u4EA4\u4EFB\u4F55\u8BFE\u7A0B`);
       return;
     }
     if (!state.availableCodes.length) {
@@ -768,8 +777,54 @@
     return cache.courses.map((course) => course.code);
   }
 
+  // src/preferences.ts
+  var PREFERENCES_KEY = "ucasxk.ui-preferences.v1";
+  var MODES = ["watch", "enroll", "prepare_sids", "direct"];
+  var DEFAULT_PREFERENCES = {
+    schemaVersion: 1,
+    mode: "watch",
+    codesText: "",
+    intervalMin: 0.8,
+    intervalMax: 1.8,
+    ocrUrl: "http://127.0.0.1:8765",
+    collapsed: false
+  };
+  function validSidCache(value) {
+    if (!value || typeof value !== "object") return false;
+    const cache = value;
+    return cache.version === 1 && Array.isArray(cache.courses);
+  }
+  function loadPreferences() {
+    const raw = GM_getValue(PREFERENCES_KEY, null);
+    if (!raw || typeof raw !== "object") return { ...DEFAULT_PREFERENCES };
+    const value = raw;
+    if (value.schemaVersion !== 1) {
+      GM_deleteValue(PREFERENCES_KEY);
+      return { ...DEFAULT_PREFERENCES };
+    }
+    return {
+      schemaVersion: 1,
+      mode: MODES.includes(value.mode) ? value.mode : DEFAULT_PREFERENCES.mode,
+      codesText: typeof value.codesText === "string" ? value.codesText : "",
+      intervalMin: typeof value.intervalMin === "number" && Number.isFinite(value.intervalMin) ? value.intervalMin : DEFAULT_PREFERENCES.intervalMin,
+      intervalMax: typeof value.intervalMax === "number" && Number.isFinite(value.intervalMax) ? value.intervalMax : DEFAULT_PREFERENCES.intervalMax,
+      ocrUrl: typeof value.ocrUrl === "string" ? value.ocrUrl : DEFAULT_PREFERENCES.ocrUrl,
+      collapsed: value.collapsed === true,
+      ...validSidCache(value.sidCache) ? { sidCache: value.sidCache } : {},
+      ...typeof value.sidFileName === "string" ? { sidFileName: value.sidFileName } : {}
+    };
+  }
+  function savePreferences(preferences) {
+    GM_setValue(PREFERENCES_KEY, preferences);
+  }
+
   // src/ui.ts
-  var OCR_DEFAULT = "http://127.0.0.1:8765";
+  var MODE_DESCRIPTIONS = {
+    watch: "\u6309\u8BFE\u7A0B\u7F16\u7801\u67E5\u8BE2\u4E00\u6B21\u5F53\u524D\u4F59\u91CF\uFF0C\u4E0D\u63D0\u4EA4\uFF1B\u4E5F\u53EF\u4EE5\u5BFC\u5165 SID JSON \u81EA\u52A8\u586B\u5145\u8BFE\u7A0B\u7F16\u7801\u3002",
+    enroll: "\u5B9E\u65F6\u67E5\u8BE2\u6700\u65B0 SID\uFF0C\u53D1\u73B0\u4F59\u91CF\u540E\u81EA\u52A8\u52A0\u5165\u9884\u9009\uFF1B\u9009\u8BFE\u9996\u65E5\u63A8\u8350\u4F7F\u7528\u3002",
+    prepare_sids: "\u67E5\u8BE2\u5E76\u5BFC\u51FA\u5E26\u65F6\u95F4\u7684 SID JSON\uFF0C\u4F9B\u4E4B\u540E\u76F4\u63A5\u63D0\u4EA4\uFF1B\u975E\u9009\u8BFE\u9996\u65E5\u63A8\u8350\u4F7F\u7528\u3002",
+    direct: "\u5BFC\u5165\u8FD1\u671F\u751F\u6210\u7684 SID JSON\uFF0C\u8DF3\u8FC7\u8BFE\u7A0B\u67E5\u8BE2\u5E76\u76F4\u63A5\u52A0\u5165\u9884\u9009\uFF1B\u975E\u9009\u8BFE\u9996\u65E5\u63A8\u8350\u4F7F\u7528\u3002"
+  };
   function mountPanel() {
     if (document.getElementById("ucasxk-helper-host")) return;
     const host = document.createElement("div");
@@ -779,13 +834,16 @@
     root.innerHTML = `
     <style>
       :host { all: initial; }
-      .panel { position: fixed; z-index: 2147483647; top: 72px; right: 20px; width: 350px;
+      .panel { position: fixed; z-index: 2147483647; top: clamp(8px, 8vh, 72px); right: clamp(8px, 2vw, 20px);
+        width: min(350px, calc(100vw - 16px)); max-height: calc(100vh - clamp(8px, 8vh, 72px) - 8px);
+        max-height: calc(100dvh - clamp(8px, 8vh, 72px) - 8px); display:flex; flex-direction:column;
         color: #17212b; background: #fff; border: 1px solid #cbd5e1; border-radius: 12px;
-        box-shadow: 0 16px 44px rgba(15,23,42,.22); font: 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+        box-shadow: 0 16px 44px rgba(15,23,42,.22); font: clamp(12px, .8125rem, 14px)/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+        overflow:hidden; }
       header { display:flex; justify-content:space-between; align-items:center; padding:11px 13px;
-        background:#0f4c81; color:#fff; border-radius:11px 11px 0 0; font-weight:700; }
+        background:#0f4c81; color:#fff; border-radius:11px 11px 0 0; font-weight:700; flex:0 0 auto; }
       header button { background:transparent; border:0; color:#fff; cursor:pointer; font-size:17px; }
-      main { padding:12px; }
+      main { padding:12px; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
       .collapsed main { display:none; }
       label { display:block; margin:8px 0 4px; color:#475569; font-weight:600; }
       textarea, select, input { box-sizing:border-box; width:100%; border:1px solid #cbd5e1; border-radius:6px;
@@ -813,15 +871,16 @@
       <main>
         <label for="mode">\u8FD0\u884C\u6A21\u5F0F</label>
         <select id="mode">
-          <option value="watch">\u89C2\u5BDF\u4F59\u91CF\uFF08\u4E0D\u63D0\u4EA4\uFF09</option>
-          <option value="enroll">\u81EA\u52A8\u52A0\u5165\u9884\u9009</option>
-          <option value="prepare_sids">\u51C6\u5907\u5E76\u4E0B\u8F7D SID</option>
-          <option value="direct">\u5BFC\u5165 SID \u76F4\u63A5\u63D0\u4EA4</option>
+          <option value="watch">\u89C2\u5BDF\u4E00\u6B21\u4F59\u91CF\uFF08\u4E0D\u63D0\u4EA4\uFF09</option>
+          <option value="enroll">\u81EA\u52A8\u52A0\u5165\u9884\u9009\uFF08\u9009\u8BFE\u9996\u65E5\u63A8\u8350\uFF09</option>
+          <option value="prepare_sids">\u51C6\u5907\u5E76\u4E0B\u8F7D SID\uFF08\u975E\u9009\u8BFE\u9996\u65E5\u63A8\u8350\uFF09</option>
+          <option value="direct">\u5BFC\u5165 SID \u76F4\u63A5\u63D0\u4EA4\uFF08\u975E\u9009\u8BFE\u9996\u65E5\u63A8\u8350\uFF09</option>
         </select>
+        <div id="mode-description" class="file-name"></div>
         <label for="codes">\u8BFE\u7A0B\u7F16\u7801\uFF08\u6BCF\u884C\u4E00\u4E2A\uFF09</label>
         <textarea id="codes" placeholder="180080025200M3001H"></textarea>
         <div id="sid-area" hidden>
-          <label for="sid-file">SID JSON\uFF08version 1\uFF09</label>
+          <label id="sid-label" for="sid-file">SID JSON\uFF08version 1\uFF09</label>
           <input id="sid-file" type="file" accept="application/json,.json">
           <div id="file-name" class="file-name">\u5C1A\u672A\u9009\u62E9\u6587\u4EF6</div>
         </div>
@@ -830,7 +889,7 @@
           <div><label for="max">\u6700\u5927\u95F4\u9694/\u79D2</label><input id="max" type="number" min="0.2" step="0.1" value="1.8"></div>
         </div>
         <label for="ocr">\u672C\u5730 OCR \u5730\u5740</label>
-        <input id="ocr" value="${OCR_DEFAULT}">
+        <input id="ocr">
         <div class="notice">\u811A\u672C\u53EA\u4F1A\u5C06\u8BFE\u7A0B\u52A0\u5165\u9884\u9009\uFF0C\u4E0D\u4F1A\u63D0\u4EA4\u6700\u7EC8\u9009\u8BFE\u5355\u3002</div>
         <div class="buttons">
           <button id="start" class="action">\u5F00\u59CB</button>
@@ -850,6 +909,8 @@
     const max = root.querySelector("#max");
     const ocr = root.querySelector("#ocr");
     const sidArea = root.querySelector("#sid-area");
+    const sidLabel = root.querySelector("#sid-label");
+    const modeDescription = root.querySelector("#mode-description");
     const sidFile = root.querySelector("#sid-file");
     const fileName = root.querySelector("#file-name");
     const error = root.querySelector("#error");
@@ -859,12 +920,44 @@
     const start = root.querySelector("#start");
     const pause = root.querySelector("#pause");
     const stop = root.querySelector("#stop");
-    let importedCache;
+    const collapse = root.querySelector("#collapse");
+    let preferences = loadPreferences();
+    const existingState = loadState();
+    let importedCache = preferences.sidCache;
+    mode.value = existingState?.active ? existingState.mode : preferences.mode;
+    codes.value = preferences.codesText || (existingState ? Object.keys(existingState.courseStatus).join("\n") : "");
+    min.value = String(preferences.intervalMin);
+    max.value = String(preferences.intervalMax);
+    ocr.value = preferences.ocrUrl;
+    panel.classList.toggle("collapsed", preferences.collapsed);
+    collapse.textContent = preferences.collapsed ? "+" : "\u2212";
+    if (importedCache) {
+      fileName.textContent = `${preferences.sidFileName || "\u5DF2\u4FDD\u5B58\u7684 SID JSON"} \xB7 ${importedCache.courses.length} \u95E8\u8BFE\u7A0B`;
+    }
     function showError(message = "") {
       error.textContent = message;
     }
+    function persistPreferences() {
+      const intervalMin = Number(min.value);
+      const intervalMax = Number(max.value);
+      preferences = {
+        schemaVersion: 1,
+        mode: mode.value,
+        codesText: codes.value,
+        intervalMin: Number.isFinite(intervalMin) ? intervalMin : preferences.intervalMin,
+        intervalMax: Number.isFinite(intervalMax) ? intervalMax : preferences.intervalMax,
+        ocrUrl: ocr.value.trim(),
+        collapsed: panel.classList.contains("collapsed"),
+        ...importedCache ? { sidCache: importedCache } : {},
+        ...preferences.sidFileName ? { sidFileName: preferences.sidFileName } : {}
+      };
+      savePreferences(preferences);
+    }
     function updateMode() {
-      sidArea.hidden = mode.value !== "direct";
+      const selectedMode = mode.value;
+      sidArea.hidden = selectedMode !== "direct" && selectedMode !== "watch";
+      sidLabel.textContent = selectedMode === "watch" ? "\u5BFC\u5165 SID JSON\uFF08\u53EF\u9009\uFF0C\u7528\u4E8E\u586B\u5145\u8BFE\u7A0B\u7F16\u7801\uFF09" : "SID JSON\uFF08version 1\uFF09";
+      modeDescription.textContent = MODE_DESCRIPTIONS[selectedMode];
       ocr.disabled = mode.value === "watch" || mode.value === "prepare_sids";
     }
     function render() {
@@ -902,7 +995,14 @@
       logs.textContent = state.logs.length ? state.logs.map((item) => `${item.at.slice(11, 19)} ${item.message}`).join("\n") : "\u6682\u65E0\u8FD0\u884C\u65E5\u5FD7";
       logs.scrollTop = logs.scrollHeight;
     }
-    mode.addEventListener("change", updateMode);
+    mode.addEventListener("change", () => {
+      updateMode();
+      persistPreferences();
+    });
+    codes.addEventListener("input", persistPreferences);
+    min.addEventListener("input", persistPreferences);
+    max.addEventListener("input", persistPreferences);
+    ocr.addEventListener("input", persistPreferences);
     sidFile.addEventListener("change", async () => {
       showError();
       const file = sidFile.files?.[0];
@@ -910,10 +1010,14 @@
       try {
         importedCache = parseSidCache(await file.text());
         fileName.textContent = `${file.name} \xB7 ${importedCache.courses.length} \u95E8\u8BFE\u7A0B`;
-        if (!codes.value.trim()) codes.value = directCodes(importedCache).join("\n");
+        codes.value = directCodes(importedCache).join("\n");
+        preferences.sidFileName = file.name;
+        persistPreferences();
       } catch (reason) {
         importedCache = void 0;
+        preferences.sidFileName = void 0;
         fileName.textContent = "\u6587\u4EF6\u65E0\u6548";
+        persistPreferences();
         showError(reason instanceof Error ? reason.message : String(reason));
       }
     });
@@ -926,8 +1030,8 @@
           if (!importedCache) throw new Error("\u8BF7\u5148\u9009\u62E9\u6709\u6548\u7684 SID JSON \u6587\u4EF6");
           if (!selectedCodes.length) selectedCodes = directCodes(importedCache);
         }
-        normalizeOcrUrl(ocr.value.trim());
-        if ((selectedMode === "enroll" || selectedMode === "direct") && !window.confirm(`\u5C06\u81EA\u52A8\u628A ${selectedCodes.length} \u95E8\u8BFE\u7A0B\u52A0\u5165\u9884\u9009\u3002\u4E0D\u4F1A\u63D0\u4EA4\u6700\u7EC8\u9009\u8BFE\u5355\u3002\u786E\u8BA4\u5F00\u59CB\u5417\uFF1F`)) return;
+        if (selectedMode === "enroll" || selectedMode === "direct") normalizeOcrUrl(ocr.value.trim());
+        persistPreferences();
         startRun({
           mode: selectedMode,
           codes: selectedCodes,
@@ -946,9 +1050,10 @@
       else pauseRun();
     });
     stop.addEventListener("click", () => stopRun());
-    root.querySelector("#collapse").addEventListener("click", (event) => {
+    collapse.addEventListener("click", (event) => {
       panel.classList.toggle("collapsed");
       event.currentTarget.textContent = panel.classList.contains("collapsed") ? "+" : "\u2212";
+      persistPreferences();
     });
     window.addEventListener("ucasxk-state-change", render);
     updateMode();

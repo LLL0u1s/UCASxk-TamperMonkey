@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { makeSidCache, parseCodes, parseSidCache } from "../src/sid";
+import { makeSidCache, parseCodes, parseSidCache, sidFilename } from "../src/sid";
 
 describe("SID files", () => {
   it("keeps input order and ignores comments", () => {
@@ -26,5 +26,9 @@ describe("SID files", () => {
       B: { row: { code: "B", name: "B", sid: "b", limit: 1, selected: 0, selectable: true }, hiddenFields: [] },
     });
     expect(cache.courses.map((row) => row.code)).toEqual(["B", "A"]);
+  });
+
+  it("adds local date and time to exported filenames", () => {
+    expect(sidFilename(new Date(2026, 8, 5, 21, 7, 9))).toBe("ucasxk-sids-20260905-210709.json");
   });
 });

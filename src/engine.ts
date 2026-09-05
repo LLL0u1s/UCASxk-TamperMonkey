@@ -286,11 +286,7 @@ async function finishRound(state: RunState): Promise<void> {
     return;
   }
   if (state.mode === "watch") {
-    if (!state.pendingCodes.length) {
-      complete(state, "目标课程已出现余量；观察模式未提交任何课程");
-      return;
-    }
-    await waitAndContinue(state);
+    complete(state, `本次余量观察已完成；共查询 ${state.roundCodes.length} 门课程，未提交任何课程`);
     return;
   }
   if (!state.availableCodes.length) {

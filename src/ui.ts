@@ -6,11 +6,17 @@ import {
   stopRun,
 } from "./engine";
 import { normalizeOcrUrl } from "./ocr";
+import { loadPreferences, savePreferences } from "./preferences";
 import { parseCodes, parseSidCache } from "./sid";
 import { loadState } from "./storage";
-import type { RunMode, SidCache } from "./types";
+import type { RunMode, SidCache, UiPreferences } from "./types";
 
-const OCR_DEFAULT = "http://127.0.0.1:8765";
+const MODE_DESCRIPTIONS: Record<RunMode, string> = {
+  watch: "按课程编码查询一次当前余量，不提交；也可以导入 SID JSON 自动填充课程编码。",
+  enroll: "实时查询最新 SID，发现余量后自动加入预选；选课首日推荐使用。",
+  prepare_sids: "查询并导出带时间的 SID JSON，供之后直接提交；非选课首日推荐使用。",
+  direct: "导入近期生成的 SID JSON，跳过课程查询并直接加入预选；非选课首日推荐使用。",
+};
 
 export function mountPanel(): void {
   if (document.getElementById("ucasxk-helper-host")) return;
@@ -21,13 +27,16 @@ export function mountPanel(): void {
   root.innerHTML = `
     <style>
       :host { all: initial; }
-      .panel { position: fixed; z-index: 2147483647; top: 72px; right: 20px; width: 350px;
+      .panel { position: fixed; z-index: 2147483647; top: clamp(8px, 8vh, 72px); right: clamp(8px, 2vw, 20px);
+        width: min(350px, calc(100vw - 16px)); max-height: calc(100vh - clamp(8px, 8vh, 72px) - 8px);
+        max-height: calc(100dvh - clamp(8px, 8vh, 72px) - 8px); display:flex; flex-direction:column;
         color: #17212b; background: #fff; border: 1px solid #cbd5e1; border-radius: 12px;
-        box-shadow: 0 16px 44px rgba(15,23,42,.22); font: 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+        box-shadow: 0 16px 44px rgba(15,23,42,.22); font: clamp(12px, .8125rem, 14px)/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+        overflow:hidden; }
       header { display:flex; justify-content:space-between; align-items:center; padding:11px 13px;
-        background:#0f4c81; color:#fff; border-radius:11px 11px 0 0; font-weight:700; }
+        background:#0f4c81; color:#fff; border-radius:11px 11px 0 0; font-weight:700; flex:0 0 auto; }
       header button { background:transparent; border:0; color:#fff; cursor:pointer; font-size:17px; }
-      main { padding:12px; }
+      main { padding:12px; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
       .collapsed main { display:none; }
       label { display:block; margin:8px 0 4px; color:#475569; font-weight:600; }
       textarea, select, input { box-sizing:border-box; width:100%; border:1px solid #cbd5e1; border-radius:6px;
@@ -55,15 +64,16 @@ export function mountPanel(): void {
       <main>
         <label for="mode">运行模式</label>
         <select id="mode">
-          <option value="watch">观察余量（不提交）</option>
-          <option value="enroll">自动加入预选</option>
-          <option value="prepare_sids">准备并下载 SID</option>
-          <option value="direct">导入 SID 直接提交</option>
+          <option value="watch">观察一次余量（不提交）</option>
+          <option value="enroll">自动加入预选（选课首日推荐）</option>
+          <option value="prepare_sids">准备并下载 SID（非选课首日推荐）</option>
+          <option value="direct">导入 SID 直接提交（非选课首日推荐）</option>
         </select>
+        <div id="mode-description" class="file-name"></div>
         <label for="codes">课程编码（每行一个）</label>
         <textarea id="codes" placeholder="180080025200M3001H"></textarea>
         <div id="sid-area" hidden>
-          <label for="sid-file">SID JSON（version 1）</label>
+          <label id="sid-label" for="sid-file">SID JSON（version 1）</label>
           <input id="sid-file" type="file" accept="application/json,.json">
           <div id="file-name" class="file-name">尚未选择文件</div>
         </div>
@@ -72,7 +82,7 @@ export function mountPanel(): void {
           <div><label for="max">最大间隔/秒</label><input id="max" type="number" min="0.2" step="0.1" value="1.8"></div>
         </div>
         <label for="ocr">本地 OCR 地址</label>
-        <input id="ocr" value="${OCR_DEFAULT}">
+        <input id="ocr">
         <div class="notice">脚本只会将课程加入预选，不会提交最终选课单。</div>
         <div class="buttons">
           <button id="start" class="action">开始</button>
@@ -93,6 +103,8 @@ export function mountPanel(): void {
   const max = root.querySelector<HTMLInputElement>("#max")!;
   const ocr = root.querySelector<HTMLInputElement>("#ocr")!;
   const sidArea = root.querySelector<HTMLElement>("#sid-area")!;
+  const sidLabel = root.querySelector<HTMLElement>("#sid-label")!;
+  const modeDescription = root.querySelector<HTMLElement>("#mode-description")!;
   const sidFile = root.querySelector<HTMLInputElement>("#sid-file")!;
   const fileName = root.querySelector<HTMLElement>("#file-name")!;
   const error = root.querySelector<HTMLElement>("#error")!;
@@ -102,14 +114,50 @@ export function mountPanel(): void {
   const start = root.querySelector<HTMLButtonElement>("#start")!;
   const pause = root.querySelector<HTMLButtonElement>("#pause")!;
   const stop = root.querySelector<HTMLButtonElement>("#stop")!;
-  let importedCache: SidCache | undefined;
+  const collapse = root.querySelector<HTMLButtonElement>("#collapse")!;
+  let preferences = loadPreferences();
+  const existingState = loadState();
+  let importedCache: SidCache | undefined = preferences.sidCache;
+
+  mode.value = existingState?.active ? existingState.mode : preferences.mode;
+  codes.value = preferences.codesText || (existingState ? Object.keys(existingState.courseStatus).join("\n") : "");
+  min.value = String(preferences.intervalMin);
+  max.value = String(preferences.intervalMax);
+  ocr.value = preferences.ocrUrl;
+  panel.classList.toggle("collapsed", preferences.collapsed);
+  collapse.textContent = preferences.collapsed ? "+" : "−";
+  if (importedCache) {
+    fileName.textContent = `${preferences.sidFileName || "已保存的 SID JSON"} · ${importedCache.courses.length} 门课程`;
+  }
 
   function showError(message = ""): void {
     error.textContent = message;
   }
 
+  function persistPreferences(): void {
+    const intervalMin = Number(min.value);
+    const intervalMax = Number(max.value);
+    preferences = {
+      schemaVersion: 1,
+      mode: mode.value as RunMode,
+      codesText: codes.value,
+      intervalMin: Number.isFinite(intervalMin) ? intervalMin : preferences.intervalMin,
+      intervalMax: Number.isFinite(intervalMax) ? intervalMax : preferences.intervalMax,
+      ocrUrl: ocr.value.trim(),
+      collapsed: panel.classList.contains("collapsed"),
+      ...(importedCache ? { sidCache: importedCache } : {}),
+      ...(preferences.sidFileName ? { sidFileName: preferences.sidFileName } : {}),
+    } satisfies UiPreferences;
+    savePreferences(preferences);
+  }
+
   function updateMode(): void {
-    sidArea.hidden = mode.value !== "direct";
+    const selectedMode = mode.value as RunMode;
+    sidArea.hidden = selectedMode !== "direct" && selectedMode !== "watch";
+    sidLabel.textContent = selectedMode === "watch"
+      ? "导入 SID JSON（可选，用于填充课程编码）"
+      : "SID JSON（version 1）";
+    modeDescription.textContent = MODE_DESCRIPTIONS[selectedMode];
     ocr.disabled = mode.value === "watch" || mode.value === "prepare_sids";
   }
 
@@ -151,7 +199,14 @@ export function mountPanel(): void {
     logs.scrollTop = logs.scrollHeight;
   }
 
-  mode.addEventListener("change", updateMode);
+  mode.addEventListener("change", () => {
+    updateMode();
+    persistPreferences();
+  });
+  codes.addEventListener("input", persistPreferences);
+  min.addEventListener("input", persistPreferences);
+  max.addEventListener("input", persistPreferences);
+  ocr.addEventListener("input", persistPreferences);
   sidFile.addEventListener("change", async () => {
     showError();
     const file = sidFile.files?.[0];
@@ -159,10 +214,14 @@ export function mountPanel(): void {
     try {
       importedCache = parseSidCache(await file.text());
       fileName.textContent = `${file.name} · ${importedCache.courses.length} 门课程`;
-      if (!codes.value.trim()) codes.value = directCodes(importedCache).join("\n");
+      codes.value = directCodes(importedCache).join("\n");
+      preferences.sidFileName = file.name;
+      persistPreferences();
     } catch (reason) {
       importedCache = undefined;
+      preferences.sidFileName = undefined;
       fileName.textContent = "文件无效";
+      persistPreferences();
       showError(reason instanceof Error ? reason.message : String(reason));
     }
   });
@@ -175,11 +234,8 @@ export function mountPanel(): void {
         if (!importedCache) throw new Error("请先选择有效的 SID JSON 文件");
         if (!selectedCodes.length) selectedCodes = directCodes(importedCache);
       }
-      normalizeOcrUrl(ocr.value.trim());
-      if (
-        (selectedMode === "enroll" || selectedMode === "direct") &&
-        !window.confirm(`将自动把 ${selectedCodes.length} 门课程加入预选。不会提交最终选课单。确认开始吗？`)
-      ) return;
+      if (selectedMode === "enroll" || selectedMode === "direct") normalizeOcrUrl(ocr.value.trim());
+      persistPreferences();
       startRun({
         mode: selectedMode,
         codes: selectedCodes,
@@ -198,9 +254,10 @@ export function mountPanel(): void {
     else pauseRun();
   });
   stop.addEventListener("click", () => stopRun());
-  root.querySelector<HTMLButtonElement>("#collapse")!.addEventListener("click", (event) => {
+  collapse.addEventListener("click", (event) => {
     panel.classList.toggle("collapsed");
     (event.currentTarget as HTMLButtonElement).textContent = panel.classList.contains("collapsed") ? "+" : "−";
+    persistPreferences();
   });
   window.addEventListener("ucasxk-state-change", render);
   updateMode();
