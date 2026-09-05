@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ucasxk-ocr"
+version = "0.1.0"
+description = "Loopback-only ddddocr API for UCASxk Tampermonkey"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "ddddocr==1.6.1",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+]
+
+[project.optional-dependencies]
+test = ["httpx>=0.28,<1", "pytest>=8,<9"]
+
+[project.scripts]
+ucasxk-ocr = "ucasxk_ocr.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ucasxk_ocr"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
