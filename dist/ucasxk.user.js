@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UCASxk 选课助手
-// @namespace    https://github.com/local/UCASxk-TamperMonkey
-// @version      0.2.0
+// @namespace    https://github.com/LLL0u1s/UCASxk-TamperMonkey
+// @version      0.2.1
 // @description  在 UCAS xkgo 页面监控课程并经本地 OCR 将课程加入预选
 // @match        https://xkgo.ucas.ac.cn:3000/*
 // @grant        GM_xmlhttpRequest
@@ -347,8 +347,8 @@
   }
   function startRun(options) {
     if (!options.codes.length) throw new Error("\u8BF7\u81F3\u5C11\u586B\u5199\u4E00\u4E2A\u8BFE\u7A0B\u7F16\u7801");
-    if (options.intervalMin < 0.2 || options.intervalMax < options.intervalMin) {
-      throw new Error("\u8F6E\u8BE2\u95F4\u9694\u5FC5\u987B\u6EE1\u8DB3 0.2 \u2264 \u6700\u5C0F\u503C \u2264 \u6700\u5927\u503C");
+    if (options.intervalMin < 3 || options.intervalMax < options.intervalMin) {
+      throw new Error("\u8F6E\u8BE2\u95F4\u9694\u5FC5\u987B\u6EE1\u8DB3 3 \u2264 \u6700\u5C0F\u503C \u2264 \u6700\u5927\u503C\uFF1B\u66F4\u77ED\u95F4\u9694\u53EF\u80FD\u89E6\u53D1\u9650\u6D41");
     }
     const state = appendLog(newState(options), `\u4EFB\u52A1\u5DF2\u542F\u52A8\uFF1A${options.mode}\uFF0C\u5171 ${options.codes.length} \u95E8\u8BFE\u7A0B`);
     saveState(state);
@@ -784,8 +784,8 @@
     schemaVersion: 1,
     mode: "watch",
     codesText: "",
-    intervalMin: 0.8,
-    intervalMax: 1.8,
+    intervalMin: 3,
+    intervalMax: 3.1,
     ocrUrl: "http://127.0.0.1:8765",
     collapsed: false
   };
@@ -802,12 +802,16 @@
       GM_deleteValue(PREFERENCES_KEY);
       return { ...DEFAULT_PREFERENCES };
     }
+    const savedMinimum = typeof value.intervalMin === "number" && Number.isFinite(value.intervalMin) ? value.intervalMin : DEFAULT_PREFERENCES.intervalMin;
+    const intervalMin = Math.max(DEFAULT_PREFERENCES.intervalMin, savedMinimum);
+    const savedMaximum = typeof value.intervalMax === "number" && Number.isFinite(value.intervalMax) ? value.intervalMax : DEFAULT_PREFERENCES.intervalMax;
+    const intervalMax = savedMaximum >= intervalMin ? savedMaximum : Math.max(DEFAULT_PREFERENCES.intervalMax, intervalMin);
     return {
       schemaVersion: 1,
       mode: MODES.includes(value.mode) ? value.mode : DEFAULT_PREFERENCES.mode,
       codesText: typeof value.codesText === "string" ? value.codesText : "",
-      intervalMin: typeof value.intervalMin === "number" && Number.isFinite(value.intervalMin) ? value.intervalMin : DEFAULT_PREFERENCES.intervalMin,
-      intervalMax: typeof value.intervalMax === "number" && Number.isFinite(value.intervalMax) ? value.intervalMax : DEFAULT_PREFERENCES.intervalMax,
+      intervalMin,
+      intervalMax,
       ocrUrl: typeof value.ocrUrl === "string" ? value.ocrUrl : DEFAULT_PREFERENCES.ocrUrl,
       collapsed: value.collapsed === true,
       ...validSidCache(value.sidCache) ? { sidCache: value.sidCache } : {},
@@ -885,8 +889,8 @@
           <div id="file-name" class="file-name">\u5C1A\u672A\u9009\u62E9\u6587\u4EF6</div>
         </div>
         <div class="row">
-          <div><label for="min">\u6700\u5C0F\u95F4\u9694/\u79D2</label><input id="min" type="number" min="0.2" step="0.1" value="0.8"></div>
-          <div><label for="max">\u6700\u5927\u95F4\u9694/\u79D2</label><input id="max" type="number" min="0.2" step="0.1" value="1.8"></div>
+          <div><label for="min">\u6700\u5C0F\u95F4\u9694/\u79D2</label><input id="min" type="number" min="3" step="0.1" value="3"></div>
+          <div><label for="max">\u6700\u5927\u95F4\u9694/\u79D2</label><input id="max" type="number" min="3" step="0.1" value="3.1"></div>
         </div>
         <label for="ocr">\u672C\u5730 OCR \u5730\u5740</label>
         <input id="ocr">

@@ -7,8 +7,8 @@ export const DEFAULT_PREFERENCES: UiPreferences = {
   schemaVersion: 1,
   mode: "watch",
   codesText: "",
-  intervalMin: 0.8,
-  intervalMax: 1.8,
+  intervalMin: 3,
+  intervalMax: 3.1,
   ocrUrl: "http://127.0.0.1:8765",
   collapsed: false,
 };
@@ -27,12 +27,22 @@ export function loadPreferences(): UiPreferences {
     GM_deleteValue(PREFERENCES_KEY);
     return { ...DEFAULT_PREFERENCES };
   }
+  const savedMinimum = typeof value.intervalMin === "number" && Number.isFinite(value.intervalMin)
+    ? value.intervalMin
+    : DEFAULT_PREFERENCES.intervalMin;
+  const intervalMin = Math.max(DEFAULT_PREFERENCES.intervalMin, savedMinimum);
+  const savedMaximum = typeof value.intervalMax === "number" && Number.isFinite(value.intervalMax)
+    ? value.intervalMax
+    : DEFAULT_PREFERENCES.intervalMax;
+  const intervalMax = savedMaximum >= intervalMin
+    ? savedMaximum
+    : Math.max(DEFAULT_PREFERENCES.intervalMax, intervalMin);
   return {
     schemaVersion: 1,
     mode: MODES.includes(value.mode as RunMode) ? (value.mode as RunMode) : DEFAULT_PREFERENCES.mode,
     codesText: typeof value.codesText === "string" ? value.codesText : "",
-    intervalMin: typeof value.intervalMin === "number" && Number.isFinite(value.intervalMin) ? value.intervalMin : DEFAULT_PREFERENCES.intervalMin,
-    intervalMax: typeof value.intervalMax === "number" && Number.isFinite(value.intervalMax) ? value.intervalMax : DEFAULT_PREFERENCES.intervalMax,
+    intervalMin,
+    intervalMax,
     ocrUrl: typeof value.ocrUrl === "string" ? value.ocrUrl : DEFAULT_PREFERENCES.ocrUrl,
     collapsed: value.collapsed === true,
     ...(validSidCache(value.sidCache) ? { sidCache: value.sidCache } : {}),

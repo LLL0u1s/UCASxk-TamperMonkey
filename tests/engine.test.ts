@@ -30,12 +30,22 @@ function state(): RunState {
 }
 
 describe("persistent run state", () => {
+  it("rejects polling intervals shorter than three seconds", () => {
+    expect(() => startRun({
+      mode: "watch",
+      codes: ["A"],
+      intervalMin: 2.9,
+      intervalMax: 3.1,
+      ocrUrl: "http://127.0.0.1:8765",
+    })).toThrow(/3 ≤ 最小值/);
+  });
+
   it("checkpoints before navigating to the main page", () => {
     startRun({
       mode: "enroll",
       codes: ["A", "B"],
-      intervalMin: 0.8,
-      intervalMax: 1.8,
+      intervalMin: 3,
+      intervalMax: 3.1,
       ocrUrl: "http://127.0.0.1:8765",
     });
     expect(state()).toMatchObject({
@@ -52,8 +62,8 @@ describe("persistent run state", () => {
     startRun({
       mode: "watch",
       codes: ["A"],
-      intervalMin: 0.8,
-      intervalMax: 1.8,
+      intervalMin: 3,
+      intervalMax: 3.1,
       ocrUrl: "http://127.0.0.1:8765",
     });
     pauseRun();
@@ -65,8 +75,8 @@ describe("persistent run state", () => {
     startRun({
       mode: "watch",
       codes: ["A"],
-      intervalMin: 0.8,
-      intervalMax: 1.8,
+      intervalMin: 3,
+      intervalMax: 3.1,
       ocrUrl: "http://127.0.0.1:8765",
     });
     await resumeRun();
@@ -79,8 +89,8 @@ describe("persistent run state", () => {
     startRun({
       mode: "watch",
       codes: ["A"],
-      intervalMin: 0.8,
-      intervalMax: 1.8,
+      intervalMin: 3,
+      intervalMax: 3.1,
       ocrUrl: "http://127.0.0.1:8765",
     });
     const restored = state();

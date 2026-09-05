@@ -35,6 +35,8 @@ describe("UI preferences", () => {
       codesText: "A\nB",
       collapsed: true,
       sidFileName: "sids.json",
+      intervalMin: 3,
+      intervalMax: 3.1,
     });
     expect(loadPreferences().sidCache?.courses[0]?.code).toBe("A");
   });

@@ -78,8 +78,8 @@ export function mountPanel(): void {
           <div id="file-name" class="file-name">尚未选择文件</div>
         </div>
         <div class="row">
-          <div><label for="min">最小间隔/秒</label><input id="min" type="number" min="0.2" step="0.1" value="0.8"></div>
-          <div><label for="max">最大间隔/秒</label><input id="max" type="number" min="0.2" step="0.1" value="1.8"></div>
+          <div><label for="min">最小间隔/秒</label><input id="min" type="number" min="3" step="0.1" value="3"></div>
+          <div><label for="max">最大间隔/秒</label><input id="max" type="number" min="3" step="0.1" value="3.1"></div>
         </div>
         <label for="ocr">本地 OCR 地址</label>
         <input id="ocr">

@@ -80,8 +80,8 @@ function newState(options: StartOptions): RunState {
 
 export function startRun(options: StartOptions): void {
   if (!options.codes.length) throw new Error("请至少填写一个课程编码");
-  if (options.intervalMin < 0.2 || options.intervalMax < options.intervalMin) {
-    throw new Error("轮询间隔必须满足 0.2 ≤ 最小值 ≤ 最大值");
+  if (options.intervalMin < 3 || options.intervalMax < options.intervalMin) {
+    throw new Error("轮询间隔必须满足 3 ≤ 最小值 ≤ 最大值；更短间隔可能触发限流");
   }
   const state = appendLog(newState(options), `任务已启动：${options.mode}，共 ${options.codes.length} 门课程`);
   saveState(state);
