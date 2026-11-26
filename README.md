@@ -4,17 +4,9 @@
 
 > 脚本不会提交最终选课单，也不提供代理、指纹伪造、多账号并发或 SEP 密码自动登录。请只在你本人有权操作的账号和系统中使用。
 
-## 组成
+## 快速开始
 
-- `src/`：模块化 TypeScript userscript 源码。
-- `dist/ucasxk.user.js`：构建后可直接安装到 Tampermonkey 的单文件脚本。
-- `ocr_api/`：只监听 `127.0.0.1` 的本地 OCR 服务。
-
-首版面向 Chrome/Edge 与 Tampermonkey。脚本仅匹配 `https://xkgodj.ucas.ac.cn/*`。
-
-## 快速开始（普通用户）
-
-普通用户可以直接安装仓库中已经构建好的 `dist/ucasxk.user.js`，不需要安装 Node.js，也不需要自己构建 userscript。只需准备本地 OCR、安装脚本并正常登录选课系统。
+在 Chrome 或 Edge 安装 Tampermonkey，使用仓库里已构建的 [用户脚本](dist/ucasxk.user.js)。观察余量和导出 SID 可以直接从第 2 步开始；两种加入预选的模式需要先启动本机 OCR。SID 是选课系统为课程提供的短期标识。
 
 ### 1. 首次准备并启动本地 OCR
 
@@ -49,7 +41,7 @@ uv run ucasxk-ocr
 3. 打开仓库中的 `dist/ucasxk.user.js`，复制全部内容覆盖编辑器中的默认内容并保存。
 4. 浏览器询问访问权限时，允许脚本连接 `127.0.0.1`。
 
-普通用户不需要执行 `npm install` 或 `npm run build`。项目发布新版本后，重新导入新版 `dist/ucasxk.user.js` 即可。
+更新时，将新版 `dist/ucasxk.user.js` 导入 Tampermonkey 并刷新选课页面。
 
 ### 3. 登录和使用
 
@@ -57,16 +49,34 @@ uv run ucasxk-ocr
 2. 页面右上角会出现“UCASxk 选课助手”悬浮面板。
 3. 每行填写一个课程编码，选择模式并点击对应的操作按钮。
 
-支持的模式：
+| 面板模式 | 源码标识 | 操作结果 |
+| --- | --- | --- |
+| 观察一次余量 | `watch` | 查询一次待查课程并显示人数。可以导入 SID 文件填充课程编码。 |
+| 自动加入预选 | `enroll` | 跳过已在预选列表的课程，逐门查询其余课程，将同一轮可选课程批量加入预选。适合选课首日。 |
+| 准备并下载 SID | `prepare_sids` | 查询目标课程，导出与原 Python 工具兼容的 version 1 JSON 文件。 |
+| 导入 SID 直接提交 | `direct` | 使用同一账号近期导出的 SID 批量加入预选，跳过已选列表和余量查询。 |
 
-- **观察一次余量（不提交）**：把每门课程查询一次并显示当前人数，不循环、不提交；可选导入 SID JSON 自动填充其中的课程编码。
-- **自动加入预选（选课首日推荐）**：实时查询所有目标课程的最新 SID，把同一轮有余量的课程用一张验证码批量加入预选。
-- **准备并下载 SID（非选课首日推荐）**：提前查询课程并下载与原 Python 工具兼容的 version 1 SID JSON，文件名包含生成日期和时间。
-- **导入 SID 直接提交（非选课首日推荐）**：读取近期生成的 SID JSON，不再查询课程余量，直接用其中的 SID 批量加入预选。
+面板会保存课程编码、模式、间隔、OCR 地址、折叠状态和已导入的 SID 信息。运行时可查看逐课进度，暂停会在当前导航或请求结束后生效。任务结束后，点击“返回配置”调整下一次任务；请在学校页面核对并自行提交最终选课单。
 
-点击当前模式的操作按钮即可开始。运行时面板显示逐课进度；任务结束后，点击“返回配置”可调整课程和设置。暂停会在当前导航或请求结束后生效；停止后不会再发送请求。课程编码、运行模式、间隔、OCR 地址、折叠状态和已导入的 SID 信息会保存在 Tampermonkey 本地存储中，刷新页面不会清空或恢复成默认界面。运行中的任务仍只有在页面路径与预期阶段完全一致时才会继续。
+## 请求方法、路径与预期响应
 
-轮询间隔默认为 **3–3.1 秒**。3 秒是当前可接受的最小值，界面和运行校验均不允许设置得更短；过小的请求间隔可能触发学校服务端限流并导致任务安全停止。
+下表描述当前客户端如何读取响应。学校端的路径相对于 `https://xkgodj.ucas.ac.cn`，本机 OCR 服务默认使用 `http://127.0.0.1:8765`。
+
+| 服务 | 方法 | 路径 | 用途 | 客户端预期响应 |
+| --- | --- | --- | --- | --- |
+| 学校 | `GET` | `/courseManage/main` | 打开预选主页 | 已登录的 HTML 页面。`parseSelectedCodes()` 从表格的“课程编码”列读取已预选课程。 |
+| 学校 | `GET` | `/courseManage/selectCourse` | 打开课程列表 | 已登录的课程列表 HTML。确认登录状态后开始逐门查询。 |
+| 学校 | `POST` | `/courseManage/selectCourse` | 按课程编码查询 | 查询结果 HTML。`parseQueryPage()` 从表格读取课程编码、名称、SID、限选人数、已选人数和可选状态；人数无法解析时记为 `null`。 |
+| 学校 | `GET` | `/captchaImage` | 获取验证码 | 文本形式的 PNG data URL，以 `data:image/png;base64,` 开头，解码后具有 PNG 文件签名。 |
+| 本机 | `POST` | `/v1/ocr` | 识别图片 | HTTP 200 和 JSON 对象，包含 `text`（字符串）、`confidence`（数值）、`accepted`（布尔值）。`accepted` 表示本机是否接受识别结果。 |
+| 学校 | `POST` | `/courseManage/saveCourse` | 批量加入预选 | 结果 HTML。`parseSubmitBatch()` 按课程解析反馈，HTTP 请求完成不代表整批成功。 |
+| 本机 | `GET` | `/health` | 手动检查服务 | 健康检查 JSON；`model_loaded` 为 `true` 表示模型已加载。此请求用于排障。 |
+
+**提交结果。** 成功或已选的课程移出队列；时间冲突的课程标记原因后移出。遇到满员，自动模式下一轮重新查询，直接 SID 模式沿用缓存。结果无法判定时，任务停止，保留提示供用户核对。
+
+**两处等待。** `handleCaptcha()` 在本机接受识别结果后等待 **3.0–3.5 秒**，再检查任务状态并提交本批课程。`waitAndContinue()` 在仍有待处理课程时等待下一轮，默认 **3.0–3.1 秒**，下限为 3 秒。面板的间隔设置只影响后者。
+
+学校的课程页面通过浏览器导航或原生表单加载，查看网络记录时应包含文档请求。验证码图片由 `fetch()` 获取，本机识别使用 `GM_xmlhttpRequest()`。
 
 ## SID 文件
 
@@ -105,14 +115,25 @@ SID 可能随账号、会话、课程调整或学期变化而失效。不要长�
 
 ## 开发者构建与验证
 
-只有修改 TypeScript 源码或参与开发时才需要 Node.js 和以下命令；普通用户可以跳过本节。
+维护时可按问题定位源码：
+
+- [engine.ts](src/engine.ts) 管理运行阶段、轮询、提交与停止条件。[navigation.ts](src/navigation.ts) 实现 GET 导航和 POST 表单提交。
+- [parser.ts](src/parser.ts) 解析学校 HTML；页面结构变化时，优先核对这里和 [解析测试](tests/parser.test.ts)。
+- [ocr.ts](src/ocr.ts) 定义本机 OCR 客户端的地址与响应校验。[ocr_api/](ocr_api/) 提供服务端实现。
+- [build.mjs](scripts/build.mjs) 定义用户脚本的版本和匹配域名，构建产物为 [dist/ucasxk.user.js](dist/ucasxk.user.js)。
+
+在仓库根目录检查、测试并构建用户脚本：
 
 ```bash
 npm install
 npm run check
 npm test
 npm run build
+```
 
+在仓库根目录运行以下命令验证本机 OCR 服务：
+
+```bash
 cd ocr_api
 uv run pytest -q
 ```
