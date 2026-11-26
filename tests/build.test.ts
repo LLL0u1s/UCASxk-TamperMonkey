@@ -4,10 +4,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("userscript metadata", () => {
-  it("limits the script to xkgo and the OCR connection to loopback", () => {
+  it("matches the configured course site and uses the package version", () => {
     const script = readFileSync(new URL("../scripts/build.mjs", import.meta.url), "utf8");
     expect(script).toContain("@namespace    https://github.com/LLL0u1s/UCASxk-TamperMonkey");
-    expect(script).toContain("@match        https://xkgo.ucas.ac.cn:3000/*");
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    expect([...script.matchAll(/^\/\/ @match\s+(\S+)/gm)].map((match) => match[1]))
+      .toEqual(["https://xkgodj.ucas.ac.cn/*"]);
+    expect(script.match(/^\/\/ @version\s+(\S+)/m)?.[1]).toBe(pkg.version);
     expect(script).toContain("@connect      127.0.0.1");
     expect(script).not.toMatch(/JSESSIONID|browser_fingerprint|Identity=/);
   });

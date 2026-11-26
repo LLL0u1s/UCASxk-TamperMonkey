@@ -154,7 +154,7 @@ function checkPageSafety(state: RunState): boolean {
     return false;
   }
   if (currentPath().includes("/user/login") || !isAuthenticated(document)) {
-    fail(state, "xkgo 会话已失效，请重新登录");
+    fail(state, "选课系统会话已失效，请重新登录");
     return false;
   }
   return true;
@@ -227,7 +227,7 @@ function handleReadSelected(state: RunState): void {
 function handleOpenSelect(state: RunState): void {
   const page = parseQueryPage(document);
   if (!page.authenticated) {
-    fail(state, "xkgo 会话已失效，请重新登录");
+    fail(state, "选课系统会话已失效，请重新登录");
     return;
   }
   beginRound(state);
